@@ -1,6 +1,11 @@
 import { execFile } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import ffmpegPath from "ffmpeg-static";
+import ffprobeStatic from "ffprobe-static";
+
+const FFMPEG = ffmpegPath!;
+const FFPROBE = ffprobeStatic.path;
 
 export interface VideoInfo {
   duration: number;
@@ -16,14 +21,6 @@ function run(
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          reject(
-            new Error(
-              `FFmpeg is required but not found. Install it with: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)`
-            )
-          );
-          return;
-        }
         reject(new Error(`FFmpeg error: ${stderr || error.message}`));
         return;
       }
@@ -33,7 +30,7 @@ function run(
 }
 
 export async function probeVideo(videoPath: string): Promise<VideoInfo> {
-  const { stdout } = await run("ffprobe", [
+  const { stdout } = await run(FFPROBE, [
     "-v",
     "quiet",
     "-print_format",
@@ -72,7 +69,7 @@ export async function extractSceneFrames(
   maxDuration?: number
 ): Promise<string[]> {
   // Extract first frame always
-  await run("ffmpeg", [
+  await run(FFMPEG, [
     "-y",
     "-i",
     videoPath,

@@ -191,7 +191,8 @@ async function extractIntervalFrames(
   const interval = Math.max(1, Math.floor(duration / maxFrames));
   const fps = 1 / interval;
 
-  await execFileAsync("ffmpeg", [
+  const ffmpegPath = (await import("ffmpeg-static")).default!;
+  await execFileAsync(ffmpegPath, [
     "-y",
     "-i",
     videoPath,
