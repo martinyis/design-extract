@@ -1,32 +1,58 @@
 # design-extract
 
-An MCP tool for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that extracts key frames from screen recordings so Claude can see and reference your designs.
+**Give Claude eyes.** Extract key frames from screen recordings so Claude Code can see, understand, and build from real designs.
 
-Record your screen, point Claude at the video, and it will extract the important frames — then use them as visual context to build, copy, or debug UI.
+Record your screen. Point Claude at the video. It extracts the important frames, analyzes every visual detail, and uses them as context to write code that matches the original design — pixel by pixel.
 
-## Setup
+---
 
-```bash
-npx design-extract init
+## The Problem
+
+Claude Code can't watch videos. When you want it to replicate a design, diagnose a visual bug, or understand an existing UI, you're stuck describing things in words or manually screenshotting every state.
+
+**design-extract** bridges that gap. It turns any screen recording into a set of intelligently-selected key frames that Claude can read and reason about — no manual screenshots, no copy-pasting, no lost context.
+
+## How It Works
+
+The extraction pipeline processes videos through four stages:
+
+```
+Screen Recording
+      |
+      v
+Scene Detection ---- FFmpeg analyzes frame-to-frame pixel changes,
+      |               extracting only the moments where the screen
+      |               actually changes (not thousands of near-identical frames)
+      v
+Dedup (aHash) ------ Perceptual hashing compares visual similarity
+      |               between frames, removing near-duplicates that
+      |               scene detection missed (hamming distance threshold)
+      v
+Smart Sampling ----- If still over the frame limit, evenly samples
+      |               across the timeline to preserve full coverage
+      v
+Optimization ------- Resizes to 1280px wide, JPEG q80
+      |               Balances quality with Claude's processing speed
+      v
+  .design-extract/
+  frame-001.jpg
+  frame-002.jpg
+  ...
 ```
 
-This configures the MCP server for your project. Restart Claude Code afterward.
+The perceptual hash (aHash) is implemented from scratch using `sharp` — an 8x8 grayscale downscale, mean threshold, and 64-bit binary hash compared via hamming distance. This replaced `sharp-phash` which had Node.js compatibility issues.
 
-That's it. FFmpeg is bundled — no system dependencies to install.
-
-## Usage
-
-Once set up, just tell Claude what you need. The tool has three modes:
+## Three Modes
 
 ### Copy a design
 
-Record a screen capture of any website or app, then:
+Record any website or app, then tell Claude to reproduce it:
 
 ```
 Extract the design from ./recording.mp4 and build the homepage
 ```
 
-Claude will extract frames, analyze every visual detail (fonts, colors, spacing, components), and write pixel-accurate code that matches the original.
+Claude analyzes every detail — fonts, colors, spacing, border radii, shadows, layout patterns — and writes code that matches the original. The analysis covers typography, full color palette with hex values, spacing rhythm, component styles, and page structure.
 
 ### Extract a design system
 
@@ -34,7 +60,7 @@ Claude will extract frames, analyze every visual detail (fonts, colors, spacing,
 Extract the design system from ./recording.mp4
 ```
 
-Claude produces a design reference covering typography, color palette, spacing, components, and visual style — useful when you want to build new pages that feel consistent with an existing design.
+Produces a design reference document covering typography, color palette, spacing scale, component patterns, and visual style. Useful when building new pages that need to feel consistent with an existing design.
 
 ### Diagnose a bug
 
@@ -42,22 +68,53 @@ Claude produces a design reference covering typography, color palette, spacing, 
 Extract the bug from ./recording.mp4 and fix it
 ```
 
-Record the bug happening, and Claude will step through the frames to identify what went wrong, pinpoint the likely cause, and suggest fixes.
+Record the bug happening. Claude steps through frames in temporal order, identifies exactly where things went wrong, determines the likely root cause (CSS issue, state bug, race condition, etc.), and suggests specific fixes.
 
-## How it works
+## Quick Start
 
-1. **Scene detection** — FFmpeg identifies moments where the screen changes significantly, so you get one frame per distinct view instead of thousands of duplicate frames.
-2. **Deduplication** — Perceptual hashing removes near-identical frames that scene detection missed.
-3. **Smart sampling** — If there are still too many frames, it evenly samples across the recording to stay under the limit (default: 12 frames).
-4. **Optimization** — Frames are resized to 1280px wide and saved as optimized JPEGs.
+```bash
+npx design-extract init
+```
 
-Frames are saved to `.design-extract/` in your project directory (automatically gitignored).
+This writes the MCP server config to `.mcp.json` and adds `.design-extract/` to `.gitignore`. Restart Claude Code, and you're done.
+
+FFmpeg is bundled — zero system dependencies beyond Node.js.
+
+## Architecture
+
+```
+src/
+  index.ts      MCP server — tool registration, parameter validation (Zod),
+                response formatting. Stdio transport.
+
+  extract.ts    Pipeline orchestrator — resolves paths, probes video, runs
+                scene detection → dedup → cap → resize → save. Writes
+                analysis instructions based on purpose mode.
+
+  ffmpeg.ts     FFmpeg/FFprobe wrapper — video probing (resolution, duration,
+                fps) and scene-change frame extraction with configurable
+                threshold.
+
+  dedup.ts      Perceptual deduplication — aHash implementation using sharp,
+                hamming distance comparison, sequential dedup with
+                first/last frame preservation.
+
+  cli.ts        CLI entry point — `init` command (writes .mcp.json,
+                updates .gitignore) and --server flag to start MCP server.
+```
+
+Built with:
+- **[Model Context Protocol SDK](https://modelcontextprotocol.io)** — the open standard for connecting AI tools
+- **FFmpeg** (bundled via `ffmpeg-static`) — scene detection and frame extraction
+- **sharp** — image processing, resizing, and perceptual hashing
+- **Zod** — runtime parameter validation
+- **tsup** — bundling
 
 ## Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `videoPath` | — | Path to the video file (mp4, mov, webm, mkv, avi) |
+| `videoPath` | required | Path to the video file (mp4, mov, webm, mkv, avi) |
 | `purpose` | — | `"copy"` for pixel-accurate reproduction, `"design"` for design system overview, `"bug"` for bug diagnosis |
 | `sensitivity` | `"medium"` | Scene detection sensitivity: `"low"`, `"medium"`, or `"high"` |
 | `maxFrames` | `12` | Maximum number of frames to extract |
@@ -65,7 +122,7 @@ Frames are saved to `.design-extract/` in your project directory (automatically 
 ## Requirements
 
 - Node.js 18+
-- Claude Code
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 
 ## License
 
